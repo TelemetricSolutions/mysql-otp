@@ -459,7 +459,7 @@ decode_text(#col{type = T}, Text)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY ->
+       T == ?TYPE_GEOMETRY; T == ?TYPE_JSON ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     Text;
@@ -607,7 +607,7 @@ decode_binary(#col{type = T}, Data)
   when T == ?TYPE_STRING; T == ?TYPE_VARCHAR; T == ?TYPE_VAR_STRING;
        T == ?TYPE_ENUM; T == ?TYPE_SET; T == ?TYPE_LONG_BLOB;
        T == ?TYPE_MEDIUM_BLOB; T == ?TYPE_BLOB; T == ?TYPE_TINY_BLOB;
-       T == ?TYPE_GEOMETRY ->
+       T == ?TYPE_GEOMETRY; T == ?TYPE_JSON ->
     %% As of MySQL 5.6.21 we receive SET and ENUM values as STRING, i.e. we
     %% cannot convert them to atom() or sets:set(), etc.
     lenenc_str(Data);
@@ -963,6 +963,17 @@ hash_password(Password, Salt) ->
     %%
     %% The auth data is obviously nul-terminated. For the "native" auth
     %% method, it should be a 20 byte salt, so let's trim it in this case.
+    PasswordBin = case erlang:is_binary(Password) of
+        true -> Password;
+        false -> erlang:iolist_to_binary(Password)
+    end,
+    case PasswordBin =:= <<>> of
+        true -> <<>>;
+        false -> hash_non_empty_password(Password, Salt)
+    end.
+
+-spec hash_non_empty_password(Password :: iodata(), Salt :: binary()) -> Hash :: binary().
+hash_non_empty_password(Password, Salt) ->
     Salt1 = case Salt of
         <<SaltNoNul:20/binary-unit:8, 0>> -> SaltNoNul;
         _ when size(Salt) == 20           -> Salt
@@ -1146,6 +1157,7 @@ parse_eof_test() ->
 hash_password_test() ->
     ?assertEqual(<<222,207,222,139,41,181,202,13,191,241,
                    234,234,73,127,244,101,205,3,28,251>>,
-                 hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)).
+                 hash_password(<<"foo">>, <<"abcdefghijklmnopqrst">>)),
+    ?assertEqual(<<>>, hash_password(<<>>, <<"abcdefghijklmnopqrst">>)).
 
 -endif.
